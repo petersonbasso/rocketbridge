@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- ================= RASTRO DE FOGO / PROPULSÃO ================= -->
+    <!-- Chama Externa (Vermelha / Laranja) -->
+    <path
+        android:pathData="M 44,64 L 25,83 C 22,86 26,90 30,88 L 50,70 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="50"
+                android:startY="64"
+                android:endX="23"
+                android:endY="90"
+                android:type="linear">
+                <item android:color="#FF7A00" android:offset="0.0" />
+                <item android:color="#FF3D00" android:offset="0.6" />
+                <item android:color="#DD0000" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Chama Interna Brilhante (Amarela / Dourada) -->
+    <path
+        android:pathData="M 46,65 L 32,79 C 30,81 33,83 35,82 L 50,69 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="50"
+                android:startY="65"
+                android:endX="30"
+                android:endY="83"
+                android:type="linear">
+                <item android:color="#FFFFFF" android:offset="0.0" />
+                <item android:color="#FFEE55" android:offset="0.4" />
+                <item android:color="#FFAA00" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- ================= ASAS DO FOGUETE ================= -->
+    <!-- Asa Esquerda / Traseira -->
+    <path
+        android:pathData="M 44,52 L 30,62 L 36,74 L 50,68 Z"
+        android:fillColor="#4F46E5" />
+    <path
+        android:pathData="M 45,54 L 33,63 L 37,71 L 49,66 Z"
+        android:fillColor="#6366F1" />
+
+    <!-- Asa Direita / Frontal -->
+    <path
+        android:pathData="M 68,44 L 74,30 L 86,36 L 80,50 Z"
+        android:fillColor="#4F46E5" />
+    <path
+        android:pathData="M 67,45 L 72,33 L 82,37 L 77,49 Z"
+        android:fillColor="#6366F1" />
+
+    <!-- ================= CORPO PRINCIPAL DO FOGUETE ================= -->
+    <!-- Fuselagem Metálica Aerodinâmica -->
+    <path
+        android:pathData="M 85,23 C 71,25 51,40 43,65 L 65,65 L 75,55 C 95,47 85,23 85,23 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="43"
+                android:startY="65"
+                android:endX="85"
+                android:endY="23"
+                android:type="linear">
+                <item android:color="#E2E8F0" android:offset="0.0" />
+                <item android:color="#FFFFFF" android:offset="0.4" />
+                <item android:color="#F8FAFC" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Nariz Ciano Tecnológico -->
+    <path
+        android:pathData="M 85,23 C 80,25 75,29 72,34 L 78,40 C 82,36 84,32 85,23 Z"
+        android:fillColor="#0284C7" />
+    <path
+        android:pathData="M 85,23 C 82,24 79,27 77,30 L 80,33 C 83,30 84,27 85,23 Z"
+        android:fillColor="#38BDF8" />
+
+    <!-- Escotilha / Janela Circular Grande em Alto Contraste -->
+    <path
+        android:pathData="M 66,42 A 6.5,6.5 0 1 1 65.9,42"
+        android:fillColor="#0F172A"
+        android:strokeWidth="2"
+        android:strokeColor="#38BDF8" />
+    <path
+        android:pathData="M 66,42 A 4,4 0 1 1 65.9,42"
+        android:fillColor="#0284C7" />
+    <path
+        android:pathData="M 64.5,40.5 A 1.2,1.2 0 1 1 64.4,40.5"
+        android:fillColor="#FFFFFF" />
+
+    <!-- Partículas / Estrelas Dinâmicas de Velocidade -->
+    <path
+        android:pathData="M 32,36 L 33,39 L 36,40 L 33,41 L 32,44 L 31,41 L 28,40 L 31,39 Z"
+        android:fillColor="#7DD3FC" />
+    <path
+        android:pathData="M 82,68 L 82.5,70 L 84.5,70.5 L 82.5,71 L 82,73 L 81.5,71 L 79.5,70.5 L 81.5,70 Z"
+        android:fillColor="#FDE047" />
+
+</vector>

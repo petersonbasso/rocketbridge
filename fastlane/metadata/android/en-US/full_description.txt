@@ -1,0 +1,9 @@
+RocketBridge is an independent, lightweight, open-source Android client designed for self-hosted and community Rocket.Chat servers.
+
+Key Features:
+- Direct WebSocket Notifications: Employs an efficient native Android Foreground Service to maintain a persistent connection with your server's DDP WebSocket, delivering real-time notifications even when the app is closed.
+- Zero Firebase / Cloud Gateway Dependency: Never worry about Rocket.Chat Cloud monthly push notification limits or expired push licenses.
+- Ultra Low Battery & Data Usage: Highly optimized background listener (less than 1-2% battery consumption per 24 hours).
+- Multi-Server Support: Easily connect to any private, enterprise, or community Rocket.Chat server.
+- Modern Material 3 Design: Clean, responsive UI with full audio, camera, and file upload support.
+- Privacy First: Connects directly to your chosen server with no third-party telemetry, tracking, or proxying.

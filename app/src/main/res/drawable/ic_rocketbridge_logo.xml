@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+
+    <!-- Fundo Squircle Arredondado Dark Space -->
+    <path
+        android:pathData="M 24,10 H 96 A 24,24 0 0 1 120,34 V 86 A 24,24 0 0 1 96,110 H 24 A 24,24 0 0 1 0,86 V 34 A 24,24 0 0 1 24,10 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="0"
+                android:startY="0"
+                android:endX="120"
+                android:endY="120"
+                android:type="linear">
+                <item android:color="#0B1120" android:offset="0.0" />
+                <item android:color="#1E1B4B" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Borda Ciano Sutil -->
+    <path
+        android:pathData="M 24,10 H 96 A 24,24 0 0 1 120,34 V 86 A 24,24 0 0 1 96,110 H 24 A 24,24 0 0 1 0,86 V 34 A 24,24 0 0 1 24,10 Z"
+        android:strokeWidth="1.5"
+        android:strokeColor="#2638BDF8"
+        android:fillColor="#00000000" />
+
+    <!-- ================= RASTRO DE FOGO ================= -->
+    <path
+        android:pathData="M 50,71 L 28,93 C 25,96 29,100 34,98 L 56,77 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="56"
+                android:startY="71"
+                android:endX="26"
+                android:endY="100"
+                android:type="linear">
+                <item android:color="#FF7A00" android:offset="0.0" />
+                <item android:color="#FF3D00" android:offset="0.6" />
+                <item android:color="#DD0000" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <path
+        android:pathData="M 52,72 L 36,88 C 34,90 37,92 39,91 L 56,76 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="56"
+                android:startY="72"
+                android:endX="34"
+                android:endY="92"
+                android:type="linear">
+                <item android:color="#FFFFFF" android:offset="0.0" />
+                <item android:color="#FFEE55" android:offset="0.4" />
+                <item android:color="#FFAA00" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- ================= ASAS ================= -->
+    <path
+        android:pathData="M 50,57 L 34,68 L 40,82 L 56,75 Z"
+        android:fillColor="#4F46E5" />
+    <path
+        android:pathData="M 51,59 L 37,69 L 41,78 L 55,73 Z"
+        android:fillColor="#6366F1" />
+
+    <path
+        android:pathData="M 76,48 L 83,32 L 96,39 L 90,55 Z"
+        android:fillColor="#4F46E5" />
+    <path
+        android:pathData="M 75,49 L 81,35 L 92,40 L 87,54 Z"
+        android:fillColor="#6366F1" />
+
+    <!-- ================= FUSELAGEM DO FOGUETE ================= -->
+    <path
+        android:pathData="M 95,25 C 79,27 57,44 48,72 L 73,72 L 84,61 C 106,52 95,25 95,25 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="48"
+                android:startY="72"
+                android:endX="95"
+                android:endY="25"
+                android:type="linear">
+                <item android:color="#E2E8F0" android:offset="0.0" />
+                <item android:color="#FFFFFF" android:offset="0.4" />
+                <item android:color="#F8FAFC" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Nariz Ciano -->
+    <path
+        android:pathData="M 95,25 C 90,27 84,31 81,37 L 88,44 C 92,39 94,35 95,25 Z"
+        android:fillColor="#0284C7" />
+    <path
+        android:pathData="M 95,25 C 92,26 88,29 86,33 L 90,37 C 93,33 94,30 95,25 Z"
+        android:fillColor="#38BDF8" />
+
+    <!-- Janela Circular Grande -->
+    <path
+        android:pathData="M 74,47 A 7.5,7.5 0 1 1 73.9,47"
+        android:fillColor="#0F172A"
+        android:strokeWidth="2.5"
+        android:strokeColor="#38BDF8" />
+    <path
+        android:pathData="M 74,47 A 4.5,4.5 0 1 1 73.9,47"
+        android:fillColor="#0284C7" />
+    <path
+        android:pathData="M 72.5,45.5 A 1.4,1.4 0 1 1 72.4,45.5"
+        android:fillColor="#FFFFFF" />
+
+    <!-- Estrelas de Fundo -->
+    <path
+        android:pathData="M 34,36 L 35,39 L 38,40 L 35,41 L 34,44 L 33,41 L 30,40 L 33,39 Z"
+        android:fillColor="#7DD3FC" />
+    <path
+        android:pathData="M 92,76 L 92.5,78 L 94.5,78.5 L 92.5,79 L 92,81 L 91.5,79 L 89.5,78.5 L 91.5,78 Z"
+        android:fillColor="#FDE047" />
+
+</vector>
