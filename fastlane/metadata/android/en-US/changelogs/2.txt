@@ -1,0 +1,4 @@
+- Visual real-time connection status indicator in the top app bar
+- Deep linking: clicking a notification opens directly into the chat room
+- Added automatic reconnection and network change recovery
+- Fastlane metadata and release signing for IzzyOnDroid & F-Droid

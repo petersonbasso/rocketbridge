@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -49,6 +50,8 @@ class RocketBridgeJsInterface(
 @Composable
 fun RocketBridgeWebView(
     url: String,
+    targetUrl: String? = null,
+    onTargetUrlConsumed: () -> Unit = {},
     onSessionCaptured: (token: String, userId: String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -57,6 +60,19 @@ fun RocketBridgeWebView(
     var canGoBack by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(true) }
     var progress by remember { mutableFloatStateOf(0f) }
+    var initialLoadedUrl by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(targetUrl) {
+        val dest = targetUrl
+        if (!dest.isNullOrBlank()) {
+            if (dest != initialLoadedUrl) {
+                webViewInstance?.let { view ->
+                    navigateTargetUrl(view, dest)
+                }
+            }
+            onTargetUrlConsumed()
+        }
+    }
 
     BackHandler(enabled = canGoBack) {
         webViewInstance?.let {
@@ -161,14 +177,17 @@ fun RocketBridgeWebView(
                         }
                     }
 
-                    loadUrl(url)
+                    val startUrl = if (!targetUrl.isNullOrBlank()) targetUrl else url
+                    initialLoadedUrl = startUrl
+                    loadUrl(startUrl)
                     webViewInstance = this
                 }
             },
             update = { view ->
-                // Se a URL do servidor mudou
-                if (view.url?.startsWith(url) != true && url.isNotBlank()) {
-                    view.loadUrl(url)
+                // Se a URL base do servidor mudou
+                val baseUrl = url.trimEnd('/')
+                if (baseUrl.isNotBlank() && view.url?.startsWith(baseUrl) != true) {
+                    view.loadUrl(baseUrl)
                 }
             }
         )
@@ -180,4 +199,44 @@ fun RocketBridgeWebView(
             )
         }
     }
+}
+
+private fun navigateTargetUrl(view: WebView, targetUrl: String) {
+    val currentUrl = view.url
+    if (currentUrl.isNullOrBlank() || !currentUrl.startsWith("http")) {
+        view.loadUrl(targetUrl)
+        return
+    }
+
+    val safeUrl = targetUrl.replace("\\", "\\\\").replace("'", "\\'")
+
+    val js = """
+        (function() {
+            var target = '$safeUrl';
+            try {
+                var urlObj = new URL(target);
+                var pathAndQuery = urlObj.pathname + urlObj.search + urlObj.hash;
+
+                // 1. Tenta FlowRouter do Meteor / Rocket.Chat
+                if (window.FlowRouter && typeof window.FlowRouter.go === 'function') {
+                    window.FlowRouter.go(pathAndQuery);
+                    return;
+                }
+
+                // 2. Tenta History API com PopStateEvent (React Router)
+                if (window.history && typeof window.history.pushState === 'function') {
+                    window.history.pushState({}, '', pathAndQuery);
+                    window.dispatchEvent(new PopStateEvent('popstate'));
+                }
+            } catch(e) {}
+
+            // 3. Fallback: navegação direta via window.location
+            setTimeout(function() {
+                if (window.location.href !== target) {
+                    window.location.href = target;
+                }
+            }, 300);
+        })();
+    """.trimIndent()
+    view.evaluateJavascript(js, null)
 }

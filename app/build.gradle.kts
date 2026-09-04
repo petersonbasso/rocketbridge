@@ -1,3 +1,7 @@
+import java.util.Properties
+import java.io.FileInputStream
+import java.io.File
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.compose.compiler)
@@ -11,14 +15,47 @@ android {
         applicationId = "io.rocketbridge"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.0.1"
+    }
+
+    signingConfigs {
+        create("release") {
+            val keystorePropertiesFile = rootProject.file("keystore.properties")
+            val keystoreProperties = Properties()
+            if (keystorePropertiesFile.exists()) {
+                keystoreProperties.load(keystorePropertiesFile.inputStream())
+            }
+
+            val storePath = System.getenv("KEYSTORE_FILE")
+                ?: keystoreProperties.getProperty("storeFile")
+            val resolvedStoreFile = if (!storePath.isNullOrBlank()) {
+                val f = File(storePath)
+                if (f.isAbsolute) f else File(rootDir, storePath)
+            } else null
+
+            if (resolvedStoreFile != null && resolvedStoreFile.exists()) {
+                storeFile = resolvedStoreFile
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                    ?: keystoreProperties.getProperty("storePassword")
+                keyAlias = System.getenv("KEY_ALIAS")
+                    ?: keystoreProperties.getProperty("keyAlias")
+                keyPassword = System.getenv("KEY_PASSWORD")
+                    ?: keystoreProperties.getProperty("keyPassword")
+                enableV1Signing = true
+                enableV2Signing = true
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            val releaseSigning = signingConfigs.getByName("release")
+            if (releaseSigning.storeFile != null) {
+                signingConfig = releaseSigning
+            }
         }
     }
     compileOptions {
@@ -40,7 +77,7 @@ android {
 }
 
 base {
-    archivesName.set("RocketBridge-v1.0")
+    archivesName.set("RocketBridge-v1.0.1")
 }
 
 kotlin {

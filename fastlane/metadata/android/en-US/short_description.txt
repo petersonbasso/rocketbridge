@@ -1,1 +1,1 @@
-Lightweight Rocket.Chat client with background push notifications without Firebase.
+Rocket.Chat client with background push notifications without Firebase.

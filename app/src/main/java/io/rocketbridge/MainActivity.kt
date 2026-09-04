@@ -15,9 +15,16 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -34,10 +41,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.rocketbridge.data.PreferencesManager
 import io.rocketbridge.service.RocketWebSocketService
+import io.rocketbridge.service.ServiceState
 import io.rocketbridge.theme.RocketBridgeTheme
 import io.rocketbridge.ui.setup.ServerSetupScreen
 import io.rocketbridge.ui.webview.RocketBridgeWebView
@@ -45,11 +58,12 @@ import io.rocketbridge.ui.webview.RocketBridgeWebView
 class MainActivity : ComponentActivity() {
 
     private lateinit var prefs: PreferencesManager
+    private var pendingTargetUrl by mutableStateOf<String?>(null)
 
     private val notificationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
             if (isGranted) {
-                if (prefs.hasCredentials) {
+                if (prefs.hasCredentials && RocketWebSocketService.connectionState.value != ServiceState.CONNECTED) {
                     RocketWebSocketService.start(this)
                 }
             } else {
@@ -62,18 +76,36 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         prefs = PreferencesManager(this)
 
+        handleIncomingIntent(intent)
+
         checkNotificationPermission()
         checkBatteryOptimization()
 
-        // Se já tem credenciais salvas, garante que o serviço de background está rodando
+        // Se já tem credenciais salvas e o serviço ainda não está conectado, inicia o serviço de background
         if (prefs.hasCredentials && prefs.isServiceEnabled) {
-            RocketWebSocketService.start(this)
+            if (RocketWebSocketService.connectionState.value != ServiceState.CONNECTED) {
+                RocketWebSocketService.start(this)
+            }
         }
 
         setContent {
             RocketBridgeTheme {
                 MainAppContent()
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingIntent(intent)
+    }
+
+    private fun handleIncomingIntent(intent: Intent?) {
+        val targetUrl = intent?.getStringExtra(RocketWebSocketService.EXTRA_TARGET_URL)
+            ?: intent?.getStringExtra("TARGET_URL")
+        if (!targetUrl.isNullOrBlank()) {
+            pendingTargetUrl = targetUrl
         }
     }
 
@@ -105,6 +137,20 @@ class MainActivity : ComponentActivity() {
     fun MainAppContent() {
         var serverUrl by remember { mutableStateOf(prefs.serverUrl) }
         var showMenu by remember { mutableStateOf(false) }
+        val serviceState by RocketWebSocketService.connectionState.collectAsStateWithLifecycle()
+        var pendingReconnectConfirmation by remember { mutableStateOf(false) }
+
+        LaunchedEffect(serviceState) {
+            if (pendingReconnectConfirmation) {
+                if (serviceState == ServiceState.CONNECTED) {
+                    Toast.makeText(this@MainActivity, "Conectado ao Rocket.Chat com sucesso!", Toast.LENGTH_SHORT).show()
+                    pendingReconnectConfirmation = false
+                } else if (serviceState == ServiceState.NO_NETWORK) {
+                    Toast.makeText(this@MainActivity, "Sem conexão com a internet.", Toast.LENGTH_SHORT).show()
+                    pendingReconnectConfirmation = false
+                }
+            }
+        }
 
         if (serverUrl.isBlank()) {
             ServerSetupScreen(
@@ -119,16 +165,43 @@ class MainActivity : ComponentActivity() {
                 topBar = {
                     TopAppBar(
                         title = {
-                            Text(
-                                text = cleanDomain(serverUrl),
-                                maxLines = 1
-                            )
+                            Column {
+                                Text(
+                                    text = cleanDomain(serverUrl),
+                                    maxLines = 1,
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    val (statusColor, statusText) = when (serviceState) {
+                                        ServiceState.CONNECTED -> Pair(Color(0xFF4CAF50), "Conectado")
+                                        ServiceState.CONNECTING -> Pair(Color(0xFFFFB300), "Conectando...")
+                                        ServiceState.AUTHENTICATING -> Pair(Color(0xFFFF9800), "Autenticando...")
+                                        ServiceState.RECONNECTING -> Pair(Color(0xFFFFB300), "Reconectando...")
+                                        ServiceState.WAITING_FOR_LOGIN -> Pair(Color(0xFF9E9E9E), "Aguardando login")
+                                        ServiceState.NO_NETWORK -> Pair(Color(0xFFF44336), "Sem internet")
+                                        ServiceState.DISCONNECTED -> Pair(Color(0xFF9E9E9E), "Desconectado")
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .size(7.dp)
+                                            .clip(CircleShape)
+                                            .background(statusColor)
+                                    )
+                                    Spacer(modifier = Modifier.width(5.dp))
+                                    Text(
+                                        text = statusText,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
                         },
                         colors = TopAppBarDefaults.topAppBarColors(),
                         actions = {
                             IconButton(onClick = {
+                                pendingReconnectConfirmation = true
                                 RocketWebSocketService.reconnect(this@MainActivity)
-                                Toast.makeText(this@MainActivity, "Reconectando serviço...", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(this@MainActivity, "Reconectando ao servidor...", Toast.LENGTH_SHORT).show()
                             }) {
                                 Text("🔄", style = MaterialTheme.typography.titleMedium)
                             }
@@ -171,6 +244,10 @@ class MainActivity : ComponentActivity() {
                 ) {
                     RocketBridgeWebView(
                         url = serverUrl,
+                        targetUrl = pendingTargetUrl,
+                        onTargetUrlConsumed = {
+                            pendingTargetUrl = null
+                        },
                         onSessionCaptured = { token, userId ->
                             if (prefs.authToken != token || prefs.userId != userId) {
                                 prefs.authToken = token
