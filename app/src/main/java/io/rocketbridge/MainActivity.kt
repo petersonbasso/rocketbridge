@@ -25,6 +25,7 @@ import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -56,6 +57,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -321,7 +323,7 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun FloatingSettingsButton(
+    private fun BoxScope.FloatingSettingsButton(
         serverUrl: String,
         serviceState: ServiceState,
         showMenu: Boolean,
@@ -330,7 +332,17 @@ class MainActivity : ComponentActivity() {
         onSwitchServer: () -> Unit,
         onLogout: () -> Unit
     ) {
-        var offsetY by remember { mutableFloatStateOf(80f) }
+        val density = LocalDensity.current
+        // A barra de conversa do Rocket.Chat possui ~56dp de altura.
+        // 68dp posiciona o botão logo abaixo da barra (área do quadrado azul).
+        val defaultOffsetPx = with(density) { 68.dp.toPx() }
+        val minOffsetPx = with(density) { 58.dp.toPx() } // Impede de sobrepor os botões de ligação/kebab do Rocket.Chat
+        val maxOffsetPx = with(density) { 650.dp.toPx() }
+
+        val savedY = prefs.floatingButtonY
+        var offsetY by remember {
+            mutableFloatStateOf(if (savedY > 0f) savedY.coerceIn(minOffsetPx, maxOffsetPx) else defaultOffsetPx)
+        }
 
         Box(
             modifier = Modifier
@@ -340,7 +352,9 @@ class MainActivity : ComponentActivity() {
                 .draggable(
                     orientation = Orientation.Vertical,
                     state = rememberDraggableState { delta ->
-                        offsetY = (offsetY + delta).coerceIn(20f, 1600f)
+                        val newY = (offsetY + delta).coerceIn(minOffsetPx, maxOffsetPx)
+                        offsetY = newY
+                        prefs.floatingButtonY = newY
                     }
                 )
         ) {

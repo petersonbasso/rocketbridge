@@ -13,7 +13,12 @@ class PreferencesManager(context: Context) {
         private const val KEY_AUTH_TOKEN = "auth_token"
         private const val KEY_USER_ID = "user_id"
         private const val KEY_SERVICE_ENABLED = "service_enabled"
+        private const val KEY_FLOATING_BUTTON_Y = "floating_button_y"
     }
+
+    var floatingButtonY: Float
+        get() = prefs.getFloat(KEY_FLOATING_BUTTON_Y, -1f)
+        set(value) = prefs.edit().putFloat(KEY_FLOATING_BUTTON_Y, value).apply()
 
     var serverUrl: String
         get() = prefs.getString(KEY_SERVER_URL, "") ?: ""
