@@ -11,6 +11,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -23,7 +24,9 @@ import androidx.core.content.ContextCompat
 import io.rocketbridge.MainActivity
 import io.rocketbridge.R
 import io.rocketbridge.data.PreferencesManager
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -32,9 +35,18 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlin.math.min
 import kotlin.random.Random
+
+data class InAppNotificationData(
+    val id: String = UUID.randomUUID().toString(),
+    val title: String,
+    val text: String,
+    val targetUrl: String,
+    val rid: String
+)
 
 enum class ServiceState {
     DISCONNECTED,
@@ -66,6 +78,72 @@ class RocketWebSocketService : Service() {
 
         private val _connectionState = MutableStateFlow(ServiceState.DISCONNECTED)
         val connectionState = _connectionState.asStateFlow()
+
+        @Volatile
+        var isAppInForeground: Boolean = false
+
+        @Volatile
+        var activeRoomId: String? = null
+
+        @Volatile
+        var activeRoomPath: String? = null
+
+        private val _inAppNotificationEvents = MutableSharedFlow<InAppNotificationData>(extraBufferCapacity = 16)
+        val inAppNotificationEvents = _inAppNotificationEvents.asSharedFlow()
+
+        internal fun isCurrentActiveRoom(rid: String, innerPayload: JSONObject?, targetUrl: String): Boolean {
+            val currentRid = activeRoomId
+            val currentPath = activeRoomPath?.trimEnd('/') ?: ""
+
+            // 1. Verificação direta por Room ID
+            if (!currentRid.isNullOrBlank() && rid.isNotBlank() && currentRid == rid) {
+                return true
+            }
+
+            // 2. Verificação pelo targetUrl / path da sala
+            if (currentPath.isNotBlank()) {
+                if (rid.isNotBlank() && currentPath.endsWith("/$rid")) {
+                    return true
+                }
+
+                if (innerPayload != null) {
+                    val name = innerPayload.optString("name")
+                    val senderUsername = innerPayload.optJSONObject("sender")?.optString("username")
+                    val type = innerPayload.optString("type").ifBlank { innerPayload.optString("t") }
+
+                    if (name.isNotBlank() && currentPath.endsWith("/$name")) {
+                        return true
+                    }
+                    if (!senderUsername.isNullOrBlank() && currentPath.endsWith("/$senderUsername")) {
+                        return true
+                    }
+                    if (type == "d" && !senderUsername.isNullOrBlank() && currentPath.contains("/direct/$senderUsername")) {
+                        return true
+                    }
+                    if (type == "c" && name.isNotBlank() && currentPath.contains("/channel/$name")) {
+                        return true
+                    }
+                    if (type == "p" && name.isNotBlank() && currentPath.contains("/group/$name")) {
+                        return true
+                    }
+                }
+
+                if (targetUrl.isNotBlank()) {
+                    try {
+                        val targetPath = try {
+                            java.net.URI(targetUrl).path?.trimEnd('/') ?: ""
+                        } catch (_: Exception) {
+                            Uri.parse(targetUrl).path?.trimEnd('/') ?: ""
+                        }
+                        if (targetPath.isNotBlank() && currentPath.isNotBlank() && currentPath == targetPath) {
+                            return true
+                        }
+                    } catch (_: Exception) {}
+                }
+            }
+
+            return false
+        }
 
         fun start(context: Context) {
             val intent = Intent(context, RocketWebSocketService::class.java).apply {
@@ -133,7 +211,7 @@ class RocketWebSocketService : Service() {
             .connectTimeout(15, TimeUnit.SECONDS)
             .writeTimeout(15, TimeUnit.SECONDS)
             .readTimeout(0, TimeUnit.MILLISECONDS)
-            .pingInterval(60, TimeUnit.SECONDS) // Ping de 60s otimizado para economia máxima de bateria
+            .pingInterval(45, TimeUnit.SECONDS) // Ping de 45s para manter a conexão ativa sem estourar o timeout dos proxies (ex: Nginx 60s)
             .retryOnConnectionFailure(true)
             .build()
     }
@@ -142,14 +220,14 @@ class RocketWebSocketService : Service() {
     private var lastNetwork: Network? = null
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
-            Log.d(TAG, "Rede disponível. Verificando conexão WebSocket...")
+            Log.d(TAG, "Rede disponível: $network. Verificando conexão WebSocket...")
             val isDifferentNetwork = lastNetwork != null && lastNetwork != network
             lastNetwork = network
 
             if (!isConnected && !isReconnecting) {
                 mainHandler.post { connectWebSocket() }
             } else if (isDifferentNetwork && isConnected) {
-                // Alternância de rede (ex: Wi-Fi <-> Dados móveis) - reconecta na nova interface ativa
+                // Alternância de rede padrão (ex: Wi-Fi <-> Dados móveis) - reconecta na nova interface ativa
                 Log.i(TAG, "Troca de interface de rede detectada. Reconectando na nova rede...")
                 mainHandler.post {
                     disconnectWebSocket()
@@ -159,13 +237,23 @@ class RocketWebSocketService : Service() {
         }
 
         override fun onLost(network: Network) {
-            Log.w(TAG, "Conexão de rede perdida.")
-            disarmConnectionTimeout()
-            mainHandler.post {
-                isConnected = false
-                isLoggedIn = false
-                isReconnecting = false
-                updateState(ServiceState.NO_NETWORK)
+            Log.w(TAG, "Conexão de rede perdida: $network")
+            val currentActive = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                connectivityManager?.activeNetwork
+            } else {
+                null
+            }
+
+            // Apenas marca sem rede se a rede perdida for a ativa e não houver outra assumindo
+            if (currentActive == null || currentActive == network) {
+                lastNetwork = null
+                disarmConnectionTimeout()
+                mainHandler.post {
+                    isConnected = false
+                    isLoggedIn = false
+                    isReconnecting = false
+                    updateState(ServiceState.NO_NETWORK)
+                }
             }
         }
     }
@@ -400,7 +488,25 @@ class RocketWebSocketService : Service() {
 
         val targetUrl = buildTargetUrl(prefs.serverUrl, innerPayload, rid)
 
-        Log.i(TAG, "NOVA NOTIFICAÇÃO RECEBIDA: $title - $text (rid: $rid, targetUrl: $targetUrl)")
+        Log.i(TAG, "NOVA NOTIFICAÇÃO RECEBIDA: $title - $text (rid: $rid, targetUrl: $targetUrl, isForeground=$isAppInForeground)")
+
+        if (isAppInForeground) {
+            if (isCurrentActiveRoom(rid, innerPayload, targetUrl)) {
+                Log.d(TAG, "Notificação silenciada: usuário já está visualizando a sala ativa ($rid).")
+                return
+            }
+
+            Log.i(TAG, "App em primeiro plano (conversa diferente): disparando toast interno.")
+            _inAppNotificationEvents.tryEmit(
+                InAppNotificationData(
+                    title = title,
+                    text = text,
+                    targetUrl = targetUrl,
+                    rid = rid
+                )
+            )
+            return
+        }
 
         // Breve wakelock para garantir que a notificação apareça com a tela apagada
         val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
@@ -719,10 +825,14 @@ class RocketWebSocketService : Service() {
     private fun registerNetworkCallback() {
         try {
             connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-            val request = NetworkRequest.Builder()
-                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-                .build()
-            connectivityManager?.registerNetworkCallback(request, networkCallback)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                connectivityManager?.registerDefaultNetworkCallback(networkCallback)
+            } else {
+                val request = NetworkRequest.Builder()
+                    .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    .build()
+                connectivityManager?.registerNetworkCallback(request, networkCallback)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Erro ao registrar NetworkCallback: ${e.message}")
         }

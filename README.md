@@ -138,14 +138,14 @@ cd rocketbridge
 ./gradlew assembleRelease
 
 # Output APK location:
-# app/build/outputs/apk/release/RocketBridge-v1.0.1-release.apk
+# app/build/outputs/apk/release/RocketBridge-v1.0.2-release.apk
 ```
 
 ### Installing onto a Connected Device via ADB
 
 ```bash
 # Enable USB Debugging on your phone, connect the cable, then run:
-adb install -r app/build/outputs/apk/release/RocketBridge-v1.0.1-release.apk
+adb install -r app/build/outputs/apk/release/RocketBridge-v1.0.2-release.apk
 
 # Launch the app:
 adb shell am start -n io.rocketbridge/.MainActivity

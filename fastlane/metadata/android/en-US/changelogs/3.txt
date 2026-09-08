@@ -1,0 +1,6 @@
+- Optimized WebSocket keep-alive ping interval (45s) for reverse proxies and mobile networks
+- Enhanced network callback using registerDefaultNetworkCallback to prevent connection drops
+- In-app notification toast when receiving messages while viewing a different room
+- Image caching with cache clearance option in settings
+- Automatic image loading and preview preference sync
+- Improved keyboard resizing and edge-to-edge padding

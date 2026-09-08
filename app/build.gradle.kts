@@ -15,8 +15,8 @@ android {
         applicationId = "io.rocketbridge"
         minSdk = 24
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.0.1"
+        versionCode = 3
+        versionName = "1.0.2"
     }
 
     signingConfigs {
@@ -77,7 +77,7 @@ android {
 }
 
 base {
-    archivesName.set("RocketBridge-v1.0.1")
+    archivesName.set("RocketBridge-v1.0.2")
 }
 
 kotlin {
@@ -111,6 +111,7 @@ dependencies {
   // Local tests: jUnit, coroutines, Android runner
   testImplementation(libs.junit)
   testImplementation(libs.kotlinx.coroutines.test)
+  testImplementation("org.json:json:20240303")
 
   // Instrumented tests: jUnit rules and runners
   androidTestImplementation(libs.androidx.test.core)

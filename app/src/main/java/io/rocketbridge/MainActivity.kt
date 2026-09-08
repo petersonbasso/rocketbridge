@@ -20,6 +20,8 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
@@ -29,13 +31,21 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.zIndex
+import io.rocketbridge.service.InAppNotificationData
+import kotlinx.coroutines.delay
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -61,15 +71,22 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlin.math.roundToInt
 import io.rocketbridge.data.PreferencesManager
+import io.rocketbridge.data.RocketMediaCacheManager
 import io.rocketbridge.service.RocketWebSocketService
 import io.rocketbridge.service.ServiceState
 import io.rocketbridge.theme.RocketBridgeTheme
 import io.rocketbridge.ui.setup.ServerSetupScreen
 import io.rocketbridge.ui.webview.RocketBridgeWebView
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.util.concurrent.TimeUnit
 
 class MainActivity : ComponentActivity() {
 
@@ -102,6 +119,7 @@ class MainActivity : ComponentActivity() {
             if (RocketWebSocketService.connectionState.value != ServiceState.CONNECTED) {
                 RocketWebSocketService.start(this)
             }
+            syncRocketChatPreferences(prefs.serverUrl, prefs.authToken ?: "", prefs.userId ?: "")
         }
 
         setContent {
@@ -109,6 +127,21 @@ class MainActivity : ComponentActivity() {
                 MainAppContent()
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        RocketWebSocketService.isAppInForeground = true
+    }
+
+    override fun onResume() {
+        super.onResume()
+        RocketWebSocketService.isAppInForeground = true
+    }
+
+    override fun onStop() {
+        super.onStop()
+        RocketWebSocketService.isAppInForeground = false
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -123,6 +156,33 @@ class MainActivity : ComponentActivity() {
         if (!targetUrl.isNullOrBlank()) {
             pendingTargetUrl = targetUrl
         }
+    }
+
+    private fun syncRocketChatPreferences(serverUrl: String, token: String, userId: String) {
+        if (serverUrl.isBlank() || token.isBlank() || userId.isBlank()) return
+        Thread {
+            try {
+                val baseUrl = serverUrl.trim().trimEnd('/')
+                val endpoint = "$baseUrl/api/v1/users.setPreferences"
+                val jsonPayload = """{"data":{"autoImageLoad":true,"saveMobileBandwidth":false,"collapseMediaByDefault":false}}"""
+                val client = OkHttpClient.Builder()
+                    .connectTimeout(10, TimeUnit.SECONDS)
+                    .readTimeout(10, TimeUnit.SECONDS)
+                    .build()
+                val requestBody = jsonPayload.toRequestBody("application/json; charset=utf-8".toMediaType())
+                val request = Request.Builder()
+                    .url(endpoint)
+                    .post(requestBody)
+                    .addHeader("X-Auth-Token", token)
+                    .addHeader("X-User-Id", userId)
+                    .build()
+                client.newCall(request).execute().use { response ->
+                    Log.d("MainActivity", "Sincronização de preferências do Rocket.Chat: code=${response.code}")
+                }
+            } catch (e: Exception) {
+                Log.w("MainActivity", "Não foi possível sincronizar preferências via REST: ${e.message}")
+            }
+        }.start()
     }
 
     private fun checkNotificationPermission() {
@@ -155,6 +215,20 @@ class MainActivity : ComponentActivity() {
         var showMenu by remember { mutableStateOf(false) }
         val serviceState by RocketWebSocketService.connectionState.collectAsStateWithLifecycle()
         var pendingReconnectConfirmation by remember { mutableStateOf(false) }
+        var currentInAppToast by remember { mutableStateOf<InAppNotificationData?>(null) }
+
+        LaunchedEffect(Unit) {
+            RocketWebSocketService.inAppNotificationEvents.collect { notification ->
+                currentInAppToast = notification
+            }
+        }
+
+        LaunchedEffect(currentInAppToast) {
+            if (currentInAppToast != null) {
+                delay(4000)
+                currentInAppToast = null
+            }
+        }
 
         LaunchedEffect(serviceState) {
             if (pendingReconnectConfirmation) {
@@ -184,6 +258,8 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(innerPadding)
+                        .consumeWindowInsets(innerPadding)
+                        .imePadding()
                 ) {
                     Column(modifier = Modifier.fillMaxSize()) {
                         // Tarja fina condicional no topo (exibida apenas quando não conectado)
@@ -216,11 +292,13 @@ class MainActivity : ComponentActivity() {
                                     pendingTargetUrl = null
                                 },
                                 onSessionCaptured = { token, userId ->
-                                    if (prefs.authToken != token || prefs.userId != userId) {
+                                    val changed = prefs.authToken != token || prefs.userId != userId
+                                    if (changed) {
                                         prefs.authToken = token
                                         prefs.userId = userId
                                         RocketWebSocketService.start(this@MainActivity)
                                     }
+                                    syncRocketChatPreferences(serverUrl, token, userId)
                                 }
                             )
                         }
@@ -248,6 +326,102 @@ class MainActivity : ComponentActivity() {
                             Toast.makeText(this@MainActivity, "Sessão reiniciada", Toast.LENGTH_SHORT).show()
                         }
                     )
+
+                    // Toast interno de nova mensagem (quando app em primeiro plano em conversa diferente)
+                    InAppNotificationToast(
+                        notification = currentInAppToast,
+                        onClick = { notification ->
+                            pendingTargetUrl = notification.targetUrl
+                            currentInAppToast = null
+                        },
+                        onDismiss = {
+                            currentInAppToast = null
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun BoxScope.InAppNotificationToast(
+        notification: InAppNotificationData?,
+        onClick: (InAppNotificationData) -> Unit,
+        onDismiss: () -> Unit
+    ) {
+        AnimatedVisibility(
+            visible = notification != null,
+            enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .zIndex(20f)
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+        ) {
+            if (notification != null) {
+                Surface(
+                    onClick = { onClick(notification) },
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.96f),
+                    tonalElevation = 6.dp,
+                    shadowElevation = 8.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primaryContainer),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "💬",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Column(
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                text = notification.title,
+                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = notification.text,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(6.dp))
+
+                        IconButton(
+                            onClick = onDismiss,
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Text(
+                                text = "✕",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -416,6 +590,15 @@ class MainActivity : ComponentActivity() {
                     enabled = false
                 )
 
+                val mediaCacheManager = remember { RocketMediaCacheManager.getInstance(this@MainActivity) }
+                var cacheSizeText by remember { mutableStateOf(mediaCacheManager.getFormattedCacheSize()) }
+
+                LaunchedEffect(showMenu) {
+                    if (showMenu) {
+                        cacheSizeText = mediaCacheManager.getFormattedCacheSize()
+                    }
+                }
+
                 HorizontalDivider()
 
                 DropdownMenuItem(
@@ -423,6 +606,22 @@ class MainActivity : ComponentActivity() {
                     onClick = {
                         onToggleMenu(false)
                         onReconnect()
+                    }
+                )
+
+                DropdownMenuItem(
+                    text = { Text("🖼️ Limpar Cache de Imagens ($cacheSizeText)") },
+                    onClick = {
+                        onToggleMenu(false)
+                        val bytesFreed = mediaCacheManager.clearCache()
+                        val mbFreed = bytesFreed / (1024.0 * 1024.0)
+                        val msg = if (bytesFreed > 0) {
+                            String.format(java.util.Locale.getDefault(), "Cache de imagens limpo: %.1f MB liberados", mbFreed)
+                        } else {
+                            "Cache de imagens já estava limpo"
+                        }
+                        cacheSizeText = mediaCacheManager.getFormattedCacheSize()
+                        Toast.makeText(this@MainActivity, msg, Toast.LENGTH_SHORT).show()
                     }
                 )
 

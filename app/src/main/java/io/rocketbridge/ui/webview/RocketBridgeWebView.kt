@@ -11,13 +11,19 @@ import android.view.ViewGroup
 import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
+import android.webkit.ServiceWorkerClient
+import android.webkit.ServiceWorkerController
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
+import io.rocketbridge.data.PreferencesManager
+import io.rocketbridge.data.RocketMediaCacheManager
+import io.rocketbridge.service.RocketWebSocketService
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
@@ -35,7 +41,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 
 class RocketBridgeJsInterface(
-    private val onSessionDetected: (token: String, userId: String) -> Unit
+    private val onSessionDetected: (token: String, userId: String) -> Unit,
+    private val onRoomDetected: (roomId: String?, roomPath: String?) -> Unit
 ) {
     @JavascriptInterface
     fun onSession(token: String?, userId: String?) {
@@ -43,6 +50,11 @@ class RocketBridgeJsInterface(
             Log.d("RocketBridgeJsInterface", "Sessão capturada do WebView: userId=$userId")
             onSessionDetected(token, userId)
         }
+    }
+
+    @JavascriptInterface
+    fun onRoomChanged(roomId: String?, roomPath: String?) {
+        onRoomDetected(roomId, roomPath)
     }
 }
 
@@ -56,6 +68,8 @@ fun RocketBridgeWebView(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val prefs = remember { PreferencesManager(context) }
+    val mediaCacheManager = remember { RocketMediaCacheManager.getInstance(context) }
     var webViewInstance by remember { mutableStateOf<WebView?>(null) }
     var canGoBack by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(true) }
@@ -86,6 +100,20 @@ fun RocketBridgeWebView(
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
+                // Interceptador para Service Worker (caso o Rocket.Chat sirva mídias pelo SW)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    try {
+                        val swController = ServiceWorkerController.getInstance()
+                        swController.setServiceWorkerClient(object : ServiceWorkerClient() {
+                            override fun shouldInterceptRequest(request: WebResourceRequest): WebResourceResponse? {
+                                return mediaCacheManager.interceptRequest(request, prefs.authToken, prefs.userId)
+                            }
+                        })
+                    } catch (e: Exception) {
+                        Log.w("RocketBridgeWebView", "ServiceWorkerController indisponível: ${e.message}")
+                    }
+                }
+
                 WebView(ctx).apply {
                     layoutParams = ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
@@ -114,7 +142,13 @@ fun RocketBridgeWebView(
                     cookieManager.setAcceptThirdPartyCookies(this, true)
 
                     addJavascriptInterface(
-                        RocketBridgeJsInterface(onSessionCaptured),
+                        RocketBridgeJsInterface(
+                            onSessionDetected = onSessionCaptured,
+                            onRoomDetected = { roomId, roomPath ->
+                                RocketWebSocketService.activeRoomId = roomId?.ifBlank { null }
+                                RocketWebSocketService.activeRoomPath = roomPath?.ifBlank { null }
+                            }
+                        ),
                         "RocketBridgeNative"
                     )
 
@@ -146,6 +180,30 @@ fun RocketBridgeWebView(
                             }
                         }
 
+                        override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
+                            super.doUpdateVisitedHistory(view, url, isReload)
+                            url?.let {
+                                try {
+                                    val uri = Uri.parse(it)
+                                    RocketWebSocketService.activeRoomPath = uri.path
+                                } catch (_: Exception) {}
+                            }
+                        }
+
+                        override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
+                            if (request != null) {
+                                val cachedResponse = mediaCacheManager.interceptRequest(
+                                    request,
+                                    prefs.authToken,
+                                    prefs.userId
+                                )
+                                if (cachedResponse != null) {
+                                    return cachedResponse
+                                }
+                            }
+                            return super.shouldInterceptRequest(view, request)
+                        }
+
                         override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                             super.onPageStarted(view, url, favicon)
                             canGoBack = view?.canGoBack() == true
@@ -155,22 +213,74 @@ fun RocketBridgeWebView(
                             super.onPageFinished(view, finishedUrl)
                             canGoBack = view?.canGoBack() == true
 
-                            // Injeta script monitorador de sessão Meteor
+                            // Injeta script monitorador de sessão, sala ativa e preferências
                             val injectJs = """
                                 (function() {
-                                    function checkMeteorSession() {
+                                    try {
+                                        var metaVp = document.querySelector('meta[name=viewport]');
+                                        if (metaVp && !metaVp.content.includes('interactive-widget')) {
+                                            metaVp.content += ', interactive-widget=resizes-content';
+                                        }
+                                    } catch(e) {}
+
+                                    function checkState() {
                                         try {
                                             var token = localStorage.getItem('Meteor.loginToken');
                                             var userId = localStorage.getItem('Meteor.userId');
                                             if (token && userId && window.RocketBridgeNative) {
                                                 window.RocketBridgeNative.onSession(token, userId);
                                             }
+
+                                            // Detecta sala/canal atualmente aberto no Rocket.Chat
+                                            var openedRoom = (window.Session && typeof Session.get === 'function') ? Session.get('openedRoom') : null;
+                                            var path = window.location.pathname;
+                                            if (window.RocketBridgeNative && typeof window.RocketBridgeNative.onRoomChanged === 'function') {
+                                                window.RocketBridgeNative.onRoomChanged(openedRoom || '', path || '');
+                                            }
+
+                                            // Aplica preferências do usuário no Rocket.Chat para carregar imagens automaticamente
+                                            if (window.Meteor && typeof Meteor.userId === 'function' && Meteor.userId() && typeof Meteor.call === 'function' && !window.__rbPrefsApplied) {
+                                                Meteor.call('saveUserPreferences', {
+                                                    autoImageLoad: true,
+                                                    saveMobileBandwidth: false,
+                                                    collapseMediaByDefault: false
+                                                }, function(err) {
+                                                    if (!err) {
+                                                        window.__rbPrefsApplied = true;
+                                                    }
+                                                });
+                                            }
                                         } catch(e) {}
                                     }
-                                    if (!window.__rocketBridgeInterval) {
-                                        window.__rocketBridgeInterval = setInterval(checkMeteorSession, 2000);
+
+                                    // Intercepta transições do histórico no SPA para sincronização imediata
+                                    if (!window.__rocketBridgeHistoryHooked) {
+                                        window.__rocketBridgeHistoryHooked = true;
+                                        var origPush = history.pushState;
+                                        if (origPush) {
+                                            history.pushState = function() {
+                                                var ret = origPush.apply(this, arguments);
+                                                setTimeout(checkState, 80);
+                                                return ret;
+                                            };
+                                        }
+                                        var origReplace = history.replaceState;
+                                        if (origReplace) {
+                                            history.replaceState = function() {
+                                                var ret = origReplace.apply(this, arguments);
+                                                setTimeout(checkState, 80);
+                                                return ret;
+                                            };
+                                        }
+                                        window.addEventListener('popstate', function() {
+                                            setTimeout(checkState, 80);
+                                        });
                                     }
-                                    checkMeteorSession();
+
+                                    if (!window.__rocketBridgeInterval) {
+                                        window.__rocketBridgeInterval = setInterval(checkState, 1500);
+                                    }
+                                    checkState();
                                 })();
                             """.trimIndent()
                             view?.evaluateJavascript(injectJs, null)
